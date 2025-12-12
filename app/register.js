@@ -53,7 +53,7 @@ const handleRegister = async () => {
     <Pressable style={styles.button} onPress ={handleRegister}>
         <Text style={styles.buttonText}>Hesap Oluştur</Text>
     </Pressable>
-    <Pressable onPress={() => router.push ('/(tabs)/login')}>
+    <Pressable onPress={() => router.push ('/login')}>
         <Text style={styles.link}>Zaten bir hesabın var mı?</Text>
     </Pressable>
 
@@ -83,7 +83,7 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   button: {
-    backgroundColor: '#ff914d',
+    backgroundColor: '#FF725E',
     padding: 15,
     borderRadius: 10,
     alignItems: 'center',
@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   link: {
-    color: '#ff914d',
+    color: '#000000ff',
     textAlign: 'center',
     marginTop: 15,
   },

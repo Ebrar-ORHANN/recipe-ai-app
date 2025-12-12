@@ -3,6 +3,7 @@ import React, {useState} from 'react'
 import { useRouter  } from 'expo-router';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../firebase/firebaseConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function login() {
 const router = useRouter();
@@ -24,6 +25,17 @@ const handleLogin = async () => {
   }
   
 }
+
+// GEÇİCİ: Onboarding'i sıfırlamak için
+const resetOnboarding = async () => {
+  try {
+    await AsyncStorage.removeItem('onboardingDone');
+    router.replace('/onboarding/step1');
+  } catch (error) {
+    Alert.alert('Hata', 'Bir sorun oluştu');
+  }
+}
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>GİRİŞ YAP</Text>
@@ -49,8 +61,13 @@ const handleLogin = async () => {
         <Text style={styles.buttonText}>Giriş Yap</Text>
       </Pressable>
 
-      <Pressable onPress={() => router.push ('/(tabs)/register')}>
+      <Pressable onPress={() => router.push ('/register')}>
         <Text style={styles.link}>Hesabın yok mu? </Text>
+      </Pressable>
+
+      {/* GEÇİCİ BUTON - Test sonrası kaldırın */}
+      <Pressable onPress={resetOnboarding} style={styles.resetButton}>
+        <Text style={styles.resetText}>🔄 Onboarding'i Sıfırla (TEST)</Text>
       </Pressable>
     </View>
   )
@@ -77,7 +94,7 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   button: {
-    backgroundColor: '#ff914d',
+    backgroundColor: '#FF725E',
     padding: 15,
     borderRadius: 10,
     alignItems: 'center',
@@ -88,8 +105,19 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   link: {
-    color: '#ff914d',
+    color: '#000000ff',
     textAlign: 'center',
     marginTop: 15,
+  },
+  resetButton: {
+    backgroundColor: '#e0e0e0',
+    padding: 10,
+    borderRadius: 5,
+    marginTop: 30,
+  },
+  resetText: {
+    textAlign: 'center',
+    fontSize: 12,
+    color: '#666',
   },
 })

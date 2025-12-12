@@ -23,6 +23,17 @@ export default function TabsLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: "Ayarlar",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="settings" size={size} color={color} />
+          ),
+        }}
+      />
     </Tabs>
+    
+    
   );
 }

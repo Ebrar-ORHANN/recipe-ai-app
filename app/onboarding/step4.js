@@ -1,25 +1,28 @@
-import { View, Text, Image, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, Image, StyleSheet } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 
-export default function Step2() {
+export default function Step4() {
   const router = useRouter();
+
+  const finish = async () => {
+    await AsyncStorage.setItem("onboardingDone", "true");
+    router.replace("/login");
+  };
 
   return (
     <View style={styles.container}>
       <Image
-        source={require("../../assets/images/onbording1.png")}
+        source={require("../../assets/images/onboarding3.png")}
         style={styles.image}
       />
 
       <Text style={styles.title}>
-        ChefMate, en sevdiğin malzemelerle sana özel tarifler hazırlasın.
+        Tariflerini düzenle, koleksiyon oluştur ve kendi lezzet dünyanı kur.
       </Text>
 
-      <TouchableOpacity
-        onPress={() => router.push("/onboarding/step3")}
-        style={styles.button}
-      >
-        <Text style={styles.buttonText}>İleri</Text>
+      <TouchableOpacity onPress={finish} style={styles.button}>
+        <Text style={styles.buttonText}>Başla</Text>
       </TouchableOpacity>
     </View>
   );
@@ -28,8 +31,8 @@ export default function Step2() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: "center",
     justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: 20,
     backgroundColor: "#FFFFFF",
   },
@@ -41,13 +44,12 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: "700",
     textAlign: "center",
     color: "#1A1A1A",
     marginTop: 24,
-    marginHorizontal: 20,
-    lineHeight: 36,
+    lineHeight: 34,
   },
 
   button: {
@@ -57,18 +59,18 @@ const styles = StyleSheet.create({
     backgroundColor: "#000",
     borderRadius: 12,
 
-    // iOS Shadow
+    // iOS shadow
     shadowColor: "#000",
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.18,
     shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 6,
+    shadowRadius: 5,
 
-    // Android Shadow
-    elevation: 4,
+    // Android elevation
+    elevation: 5,
   },
 
   buttonText: {
-    color: "white",
+    color: "#fff",
     fontSize: 16,
     fontWeight: "600",
   },
