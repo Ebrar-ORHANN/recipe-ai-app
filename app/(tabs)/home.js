@@ -1,18 +1,11 @@
-import {
-  StyleSheet,
-  Text,
-  View,
-  TouchableOpacity,
-  ScrollView,
-  TextInput,
-  ActivityIndicator,
-} from "react-native";
+import {StyleSheet,Text,View,TouchableOpacity,ScrollView,TextInput,ActivityIndicator,Alert,} from "react-native";
 import React, { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { signOut } from "firebase/auth";
 import { auth } from "@/firebase/firebaseConfig";
 import { useRouter } from "expo-router";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+
 
 export default function Home() {
   const router = useRouter();
@@ -25,47 +18,20 @@ export default function Home() {
     router.replace("/login");
   };
 
+  // 🔥 Yeni AI fonksiyonu — sade ve doğru çalışan versiyon
   const handleSearch = async () => {
     if (!query.trim()) {
-      alert("Lütfen malzeme veya yemek adı girin!");
+      Alert.alert("Hata", "Lütfen malzeme veya yemek adı girin!");
       return;
     }
 
     setLoading(true);
     try {
-      const genAI = new GoogleGenerativeAI(process.env.EXPO_PUBLIC_GEMINI_KEY);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-      const prompt = `Kullanıcının isteği: "${query}"
-
-Lütfen bu isteğe göre 3 Türk mutfağı tarifi öner. Her tarif için:
-- Tarif adı
-- Malzemeler (virgülle ayrılmış)
-- Yapım süresi (örn: 30 dakika)
-- Zorluk seviyesi (Kolay/Orta/Zor)
-- Kısa yapılış açıklaması (2-3 adım)
-
-SADECE JSON formatında yanıt ver:
-[
-  {
-    "ad": "Tavuklu Pilav",
-    "malzemeler": "tavuk, pirinç, soğan, tereyağı",
-    "sure": "30 dakika",
-    "zorluk": "Kolay",
-    "yapilis": "1. Tavukları haşlayın. 2. Pirinçleri yıkayın. 3. Tüm malzemeleri tencereye koyup pişirin."
-  }
-]`;
-
-      const result = await model.generateContent(prompt);
-      let aiYanit = result.response.text();
-
-      // JSON formatını temizle
-      aiYanit = aiYanit.replace(/```json/g, "").replace(/```/g, "").trim();
-      const tarifListesi = JSON.parse(aiYanit);
+      const tarifListesi = await generateRecipe(query);
       setTarifler(tarifListesi);
     } catch (error) {
       console.error("AI Hatası:", error);
-      alert("Bir hata oluştu. Lütfen tekrar deneyin.");
+      Alert.alert("Hata", "API anahtarı geçersiz veya bir sorun oluştu!");
     } finally {
       setLoading(false);
     }
