@@ -1,11 +1,19 @@
-import {StyleSheet,Text,View,TouchableOpacity,ScrollView,TextInput,ActivityIndicator,Alert,} from "react-native";
+import {
+  StyleSheet,
+  Text,
+  View,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  ActivityIndicator,
+  Alert,
+} from "react-native";
 import React, { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { signOut } from "firebase/auth";
 import { auth } from "@/firebase/firebaseConfig";
 import { useRouter } from "expo-router";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
+import { generateRecipe } from "@/ai/gemini";
 
 export default function Home() {
   const router = useRouter();
@@ -18,7 +26,6 @@ export default function Home() {
     router.replace("/login");
   };
 
-  // 🔥 Yeni AI fonksiyonu — sade ve doğru çalışan versiyon
   const handleSearch = async () => {
     if (!query.trim()) {
       Alert.alert("Hata", "Lütfen malzeme veya yemek adı girin!");
@@ -28,10 +35,18 @@ export default function Home() {
     setLoading(true);
     try {
       const tarifListesi = await generateRecipe(query);
+      
+      if (tarifListesi.length === 0) {
+        Alert.alert("Uyarı", "Tarif bulunamadı. Lütfen tekrar deneyin.");
+      }
+      
       setTarifler(tarifListesi);
     } catch (error) {
       console.error("AI Hatası:", error);
-      Alert.alert("Hata", "API anahtarı geçersiz veya bir sorun oluştu!");
+      Alert.alert(
+        "Hata",
+        "Bir sorun oluştu. API anahtarınızı kontrol edin."
+      );
     } finally {
       setLoading(false);
     }
