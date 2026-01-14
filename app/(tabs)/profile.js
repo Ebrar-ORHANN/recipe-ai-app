@@ -4,51 +4,232 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
+  Alert,
+  ActivityIndicator,
+  TextInput,
+  Modal,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { auth } from "@/firebase/firebaseConfig";
+import { auth, db } from "@/firebase/firebaseConfig";
 import { useState, useEffect } from "react";
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  deleteDoc, 
+  doc,
+  updateDoc,
+  setDoc,
+  getDoc 
+} from "firebase/firestore";
 
 export default function Profile() {
-  const [savedRecipes, setSavedRecipes] = useState([
-    // Örnek veri - Gerçek uygulamada Firebase'den gelecek
-    {
-      id: 1,
-      ad: "Tavuklu Pilav",
-      sure: "30 dakika",
-      zorluk: "Kolay",
-      kategori: "Ana Yemek",
-    },
-    {
-      id: 2,
-      ad: "Mercimek Çorbası",
-      sure: "25 dakika",
-      zorluk: "Çok Kolay",
-      kategori: "Çorba",
-    },
-    {
-      id: 3,
-      ad: "Karnıyarık",
-      sure: "60 dakika",
-      zorluk: "Orta",
-      kategori: "Ana Yemek",
-    },
-  ]);
+  const [savedRecipes, setSavedRecipes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState("Hepsi");
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [userName, setUserName] = useState("");
+  const [editingName, setEditingName] = useState("");
+  const [stats, setStats] = useState({
+    saved: 0,
+    completed: 0,
+    favorites: 0
+  });
 
   const user = auth.currentUser;
+  const kategoriler = ["Hepsi", "Ana Yemek", "Çorba", "Tatlı", "Salata", "Ara Öğün"];
 
-  const kategoriler = ["Hepsi", "Ana Yemek", "Çorba", "Tatlı", "Salata"];
-  const [selectedCategory, setSelectedCategory] = useState("Hepsi");
+  useEffect(() => {
+    loadUserData();
+    loadSavedRecipes();
+  }, []);
 
-  const filteredRecipes =
-    selectedCategory === "Hepsi"
-      ? savedRecipes
-      : savedRecipes.filter((recipe) => recipe.kategori === selectedCategory);
-
-  const deleteRecipe = (id) => {
-    setSavedRecipes(savedRecipes.filter((recipe) => recipe.id !== id));
+  const loadUserData = async () => {
+    try {
+      const userDoc = await getDoc(doc(db, "users", user.uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        setUserName(userData.displayName || user.email?.split('@')[0] || "Kullanıcı");
+        setStats({
+          saved: userData.savedCount || 0,
+          completed: userData.completedCount || 0,
+          favorites: userData.favoritesCount || 0
+        });
+      } else {
+        // İlk kez giriş yapıyorsa varsayılan veri oluştur
+        const defaultName = user.email?.split('@')[0] || "Kullanıcı";
+        await setDoc(doc(db, "users", user.uid), {
+          displayName: defaultName,
+          email: user.email,
+          savedCount: 0,
+          completedCount: 0,
+          favoritesCount: 0,
+          createdAt: new Date()
+        });
+        setUserName(defaultName);
+      }
+    } catch (error) {
+      console.error("Kullanıcı verileri yüklenirken hata:", error);
+    }
   };
+
+  const loadSavedRecipes = async () => {
+    try {
+      setLoading(true);
+      const q = query(
+        collection(db, "savedRecipes"),
+        where("userId", "==", user.uid)
+      );
+      
+      const querySnapshot = await getDocs(q);
+      const recipes = [];
+      
+      querySnapshot.forEach((doc) => {
+        recipes.push({ id: doc.id, ...doc.data() });
+      });
+      
+      setSavedRecipes(recipes);
+      
+      // İstatistikleri güncelle
+      await updateDoc(doc(db, "users", user.uid), {
+        savedCount: recipes.length
+      });
+      
+    } catch (error) {
+      console.error("Tarifler yüklenirken hata:", error);
+      Alert.alert("Hata", "Tarifler yüklenemedi");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteRecipe = async (recipeId) => {
+    Alert.alert(
+      "Tarif Silinecek",
+      "Bu tarifi silmek istediğinize emin misiniz?",
+      [
+        { text: "İptal", style: "cancel" },
+        {
+          text: "Sil",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, "savedRecipes", recipeId));
+              setSavedRecipes(savedRecipes.filter((r) => r.id !== recipeId));
+              
+              // İstatistikleri güncelle
+              await updateDoc(doc(db, "users", user.uid), {
+                savedCount: savedRecipes.length - 1
+              });
+              
+              Alert.alert("Başarılı", "Tarif silindi");
+            } catch (error) {
+              console.error("Silme hatası:", error);
+              Alert.alert("Hata", "Tarif silinemedi");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const toggleFavorite = async (recipeId) => {
+    try {
+      const recipe = savedRecipes.find(r => r.id === recipeId);
+      const newFavoriteStatus = !recipe.isFavorite;
+      
+      await updateDoc(doc(db, "savedRecipes", recipeId), {
+        isFavorite: newFavoriteStatus
+      });
+      
+      setSavedRecipes(
+        savedRecipes.map(r => 
+          r.id === recipeId ? { ...r, isFavorite: newFavoriteStatus } : r
+        )
+      );
+      
+      // Favori sayısını güncelle
+      const favoriteCount = savedRecipes.filter(r => 
+        r.id === recipeId ? newFavoriteStatus : r.isFavorite
+      ).length;
+      
+      await updateDoc(doc(db, "users", user.uid), {
+        favoritesCount: favoriteCount
+      });
+      
+    } catch (error) {
+      console.error("Favori güncelleme hatası:", error);
+    }
+  };
+
+  const markAsCompleted = async (recipeId) => {
+    try {
+      const recipe = savedRecipes.find(r => r.id === recipeId);
+      const newCompletedStatus = !recipe.isCompleted;
+      
+      await updateDoc(doc(db, "savedRecipes", recipeId), {
+        isCompleted: newCompletedStatus,
+        completedAt: newCompletedStatus ? new Date() : null
+      });
+      
+      setSavedRecipes(
+        savedRecipes.map(r => 
+          r.id === recipeId ? { ...r, isCompleted: newCompletedStatus } : r
+        )
+      );
+      
+      // Tamamlanan sayısını güncelle
+      const completedCount = savedRecipes.filter(r => 
+        r.id === recipeId ? newCompletedStatus : r.isCompleted
+      ).length;
+      
+      await updateDoc(doc(db, "users", user.uid), {
+        completedCount: completedCount
+      });
+      
+      Alert.alert(
+        "Başarılı", 
+        newCompletedStatus ? "Tarif tamamlandı olarak işaretlendi! 🎉" : "Tamamlanmadı olarak işaretlendi"
+      );
+      
+    } catch (error) {
+      console.error("Tamamlama durumu güncelleme hatası:", error);
+    }
+  };
+
+  const updateUserName = async () => {
+    if (!editingName.trim()) {
+      Alert.alert("Hata", "İsim boş olamaz");
+      return;
+    }
+    
+    try {
+      await updateDoc(doc(db, "users", user.uid), {
+        displayName: editingName.trim()
+      });
+      
+      setUserName(editingName.trim());
+      setShowEditModal(false);
+      Alert.alert("Başarılı", "İsim güncellendi");
+    } catch (error) {
+      console.error("İsim güncelleme hatası:", error);
+      Alert.alert("Hata", "İsim güncellenemedi");
+    }
+  };
+
+  const filteredRecipes = selectedCategory === "Hepsi"
+    ? savedRecipes
+    : savedRecipes.filter((recipe) => recipe.kategori === selectedCategory);
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#FF725E" />
+        <Text style={styles.loadingText}>Tarifler yükleniyor...</Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container}>
@@ -59,9 +240,17 @@ export default function Profile() {
             <Ionicons name="person" size={40} color="#FF725E" />
           </View>
           <View style={styles.userInfo}>
-            <Text style={styles.userName}>
-              {user?.displayName || "Kullanıcı"}
-            </Text>
+            <View style={styles.nameRow}>
+              <Text style={styles.userName}>{userName}</Text>
+              <TouchableOpacity 
+                onPress={() => {
+                  setEditingName(userName);
+                  setShowEditModal(true);
+                }}
+              >
+                <Ionicons name="pencil" size={20} color="#666" />
+              </TouchableOpacity>
+            </View>
             <Text style={styles.userEmail}>{user?.email}</Text>
           </View>
         </View>
@@ -70,17 +259,17 @@ export default function Profile() {
       {/* Stats */}
       <View style={styles.statsContainer}>
         <View style={styles.statBox}>
-          <Text style={styles.statNumber}>{savedRecipes.length}</Text>
+          <Text style={styles.statNumber}>{stats.saved}</Text>
           <Text style={styles.statLabel}>Kayıtlı Tarif</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statBox}>
-          <Text style={styles.statNumber}>12</Text>
+          <Text style={styles.statNumber}>{stats.completed}</Text>
           <Text style={styles.statLabel}>Yapılan Tarif</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statBox}>
-          <Text style={styles.statNumber}>8</Text>
+          <Text style={styles.statNumber}>{stats.favorites}</Text>
           <Text style={styles.statLabel}>Favoriler</Text>
         </View>
       </View>
@@ -105,8 +294,7 @@ export default function Profile() {
               <Text
                 style={[
                   styles.categoryChipText,
-                  selectedCategory === kategori &&
-                    styles.categoryChipTextActive,
+                  selectedCategory === kategori && styles.categoryChipTextActive,
                 ]}
               >
                 {kategori}
@@ -123,7 +311,13 @@ export default function Profile() {
             <View key={recipe.id} style={styles.recipeCard}>
               <View style={styles.recipeImagePlaceholder}>
                 <Ionicons name="restaurant" size={40} color="#FF725E" />
+                {recipe.isCompleted && (
+                  <View style={styles.completedBadge}>
+                    <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
+                  </View>
+                )}
               </View>
+              
               <View style={styles.recipeInfo}>
                 <Text style={styles.recipeName}>{recipe.ad}</Text>
                 <View style={styles.recipeDetails}>
@@ -137,23 +331,91 @@ export default function Profile() {
                   </View>
                 </View>
               </View>
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={() => deleteRecipe(recipe.id)}
-              >
-                <Ionicons name="trash-outline" size={20} color="#ff4444" />
-              </TouchableOpacity>
+              
+              <View style={styles.recipeActions}>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => toggleFavorite(recipe.id)}
+                >
+                  <Ionicons 
+                    name={recipe.isFavorite ? "heart" : "heart-outline"} 
+                    size={20} 
+                    color={recipe.isFavorite ? "#ff4444" : "#666"} 
+                  />
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => markAsCompleted(recipe.id)}
+                >
+                  <Ionicons 
+                    name={recipe.isCompleted ? "checkmark-circle" : "checkmark-circle-outline"} 
+                    size={20} 
+                    color={recipe.isCompleted ? "#4CAF50" : "#666"} 
+                  />
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => deleteRecipe(recipe.id)}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#ff4444" />
+                </TouchableOpacity>
+              </View>
             </View>
           ))
         ) : (
           <View style={styles.emptyState}>
             <Ionicons name="document-text-outline" size={80} color="#ddd" />
             <Text style={styles.emptyText}>
-              Bu kategoride kayıtlı tarif yok
+              {selectedCategory === "Hepsi" 
+                ? "Henüz kayıtlı tarif yok" 
+                : "Bu kategoride kayıtlı tarif yok"}
+            </Text>
+            <Text style={styles.emptySubtext}>
+              Ana sayfadan tariflerinizi kaydedin
             </Text>
           </View>
         )}
       </View>
+
+      {/* Edit Name Modal */}
+      <Modal
+        visible={showEditModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowEditModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>İsim Düzenle</Text>
+            
+            <TextInput
+              style={styles.modalInput}
+              value={editingName}
+              onChangeText={setEditingName}
+              placeholder="Yeni isminiz"
+              autoFocus
+            />
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setShowEditModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>İptal</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.modalButton, styles.saveButton]}
+                onPress={updateUserName}
+              >
+                <Text style={styles.saveButtonText}>Kaydet</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -162,6 +424,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#f8f9fa",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f8f9fa",
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: "#666",
   },
   header: {
     backgroundColor: "#fff",
@@ -183,6 +456,11 @@ const styles = StyleSheet.create({
   userInfo: {
     marginLeft: 16,
     flex: 1,
+  },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   userName: {
     fontSize: 22,
@@ -220,6 +498,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#666",
     marginTop: 4,
+    textAlign: "center",
   },
   statDivider: {
     width: 1,
@@ -279,6 +558,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff3e0",
     justifyContent: "center",
     alignItems: "center",
+    position: "relative",
+  },
+  completedBadge: {
+    position: "absolute",
+    top: -5,
+    right: -5,
+    backgroundColor: "#fff",
+    borderRadius: 10,
   },
   recipeInfo: {
     flex: 1,
@@ -303,8 +590,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#666",
   },
-  deleteButton: {
-    padding: 8,
+  recipeActions: {
+    flexDirection: "column",
+    gap: 8,
+  },
+  actionButton: {
+    padding: 4,
   },
   emptyState: {
     alignItems: "center",
@@ -316,5 +607,66 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#999",
     marginTop: 16,
+    textAlign: "center",
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: "#bbb",
+    marginTop: 8,
+    textAlign: "center",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 24,
+    width: "85%",
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1a1a1a",
+    marginBottom: 20,
+    textAlign: "center",
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 12,
+    padding: 15,
+    fontSize: 16,
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  cancelButton: {
+    backgroundColor: "#f5f5f5",
+  },
+  cancelButtonText: {
+    color: "#666",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  saveButton: {
+    backgroundColor: "#FF725E",
+  },
+  saveButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

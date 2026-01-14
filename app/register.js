@@ -26,7 +26,7 @@ const handleRegister = async () => {
   };
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Kayıt Ol</Text>
+      <Text style={styles.title}>KAYIT OL</Text>
     
     <TextInput
     placeholder='Ad Soyad'

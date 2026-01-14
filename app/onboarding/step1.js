@@ -8,7 +8,7 @@ export default function step1() {
   return (
     <View style={styles.container}>
       <Image
-        source = {require ("../../assets/images/Gemini_Generated_Image_qctldpqctldpqctl-removebg-preview.png")}
+        source = {require ("../../assets/images/ChatGPT Image 14 Oca 2026 19_17_30-Photoroom.png")}
         style={styles.image}
       />
       
@@ -16,7 +16,7 @@ export default function step1() {
       onPress = {() => router.push ("/onboarding/step2")}
       style={styles.button} >
       
-       <Text style={styles.button_title}>İleri</Text>
+      <Text style={styles.button_title}>İleri</Text>
       </TouchableOpacity>
     </View>
         
@@ -25,13 +25,31 @@ export default function step1() {
 
 const styles = StyleSheet.create({
   container:
-  { flex: 1, alignItems: "center", justifyContent: "center" },
+  {
+     flex: 1, alignItems: "center", justifyContent: "center" },
   image:
   { width: 350, height: 350 },
   title:
   { fontSize: 24, fontWeight: "bold", marginTop: 20 },
   button:
-  { marginTop: 40, padding: 12, backgroundColor: "black", borderRadius: 8 },
+  { marginTop: 40,
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    backgroundColor: "#000",
+    borderRadius: 12,
+
+    // iOS Shadow
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 6,
+
+    // Android Shadow
+    elevation: 4,
+    },
 button_title:
-  { color: "white" }
+  {color: "white",
+    fontSize: 16,
+    fontWeight: "600",
+  }
 })

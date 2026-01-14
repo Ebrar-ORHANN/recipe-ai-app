@@ -49,7 +49,7 @@ const resetOnboarding = async () => {
       />
 
       <TextInput
-        placeholder="Password"
+        placeholder="Şifre"
         value={password}
         onChangeText={setPassword}
         keyboardType='numeric'

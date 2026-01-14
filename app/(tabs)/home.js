@@ -11,15 +11,17 @@ import {
 import React, { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { signOut } from "firebase/auth";
-import { auth } from "@/firebase/firebaseConfig";
+import { auth, db } from "@/firebase/firebaseConfig";
 import { useRouter } from "expo-router";
 import { generateRecipe } from "@/ai/gemini";
+import { collection, addDoc, query, where, getDocs, deleteDoc, doc } from "firebase/firestore";
 
 export default function Home() {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [tarifler, setTarifler] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [savingRecipeId, setSavingRecipeId] = useState(null);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -35,11 +37,11 @@ export default function Home() {
     setLoading(true);
     try {
       const tarifListesi = await generateRecipe(query);
-      
+
       if (tarifListesi.length === 0) {
         Alert.alert("Uyarı", "Tarif bulunamadı. Lütfen tekrar deneyin.");
       }
-      
+
       setTarifler(tarifListesi);
     } catch (error) {
       console.error("AI Hatası:", error);
@@ -49,6 +51,92 @@ export default function Home() {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveRecipe = async (tarif, index) => {
+    try {
+      setSavingRecipeId(index);
+
+      // Kategori belirleme
+      let kategori = "Ana Yemek";
+      const tarifAdi = tarif.ad.toLowerCase();
+      
+      if (tarifAdi.includes("çorba")) kategori = "Çorba";
+      else if (tarifAdi.includes("tatlı") || tarifAdi.includes("pasta") || tarifAdi.includes("kek")) kategori = "Tatlı";
+      else if (tarifAdi.includes("salata")) kategori = "Salata";
+      else if (tarifAdi.includes("börek") || tarifAdi.includes("poğaça")) kategori = "Ara Öğün";
+
+      // Aynı tarif daha önce kaydedilmiş mi kontrol et
+      const q = query(
+        collection(db, "savedRecipes"),
+        where("userId", "==", auth.currentUser.uid),
+        where("ad", "==", tarif.ad)
+      );
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        Alert.alert("Bilgi", "Bu tarif zaten kayıtlı!");
+        setSavingRecipeId(null);
+        return;
+      }
+
+      // Tarifi kaydet
+      await addDoc(collection(db, "savedRecipes"), {
+        userId: auth.currentUser.uid,
+        ad: tarif.ad,
+        malzemeler: tarif.malzemeler,
+        sure: tarif.sure,
+        zorluk: tarif.zorluk,
+        yapilis: tarif.yapilis,
+        kategori: kategori,
+        isFavorite: false,
+        isCompleted: false,
+        createdAt: new Date(),
+      });
+
+      Alert.alert("Başarılı! 🎉", "Tarif kaydedildi");
+      
+      // Tarifi listeden güncelle (kaydedildi olarak işaretle)
+      const updatedTarifler = [...tarifler];
+      updatedTarifler[index] = { ...tarif, saved: true };
+      setTarifler(updatedTarifler);
+
+    } catch (error) {
+      console.error("Kaydetme hatası:", error);
+      Alert.alert("Hata", "Tarif kaydedilemedi");
+    } finally {
+      setSavingRecipeId(null);
+    }
+  };
+
+  const unsaveRecipe = async (tarif, index) => {
+    try {
+      setSavingRecipeId(index);
+
+      // Kaydedilmiş tarifi bul
+      const q = query(
+        collection(db, "savedRecipes"),
+        where("userId", "==", auth.currentUser.uid),
+        where("ad", "==", tarif.ad)
+      );
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        await deleteDoc(querySnapshot.docs[0].ref);
+        Alert.alert("Başarılı", "Tarif kaydedilenlerden çıkarıldı");
+        
+        // Tarifi listeden güncelle
+        const updatedTarifler = [...tarifler];
+        updatedTarifler[index] = { ...tarif, saved: false };
+        setTarifler(updatedTarifler);
+      }
+
+    } catch (error) {
+      console.error("Silme hatası:", error);
+      Alert.alert("Hata", "İşlem başarısız");
+    } finally {
+      setSavingRecipeId(null);
     }
   };
 
@@ -127,9 +215,37 @@ export default function Home() {
               <Text style={styles.recipeLabel}>Yapılışı:</Text>
               <Text style={styles.recipeSteps}>{tarif.yapilis}</Text>
 
-              <TouchableOpacity style={styles.saveButton}>
-                <Ionicons name="bookmark-outline" size={20} color="#FF725E" />
-                <Text style={styles.saveButtonText}>Kaydet</Text>
+              <TouchableOpacity
+                style={[
+                  styles.saveButton,
+                  tarif.saved && styles.savedButton
+                ]}
+                onPress={() => 
+                  tarif.saved 
+                    ? unsaveRecipe(tarif, index)
+                    : saveRecipe(tarif, index)
+                }
+                disabled={savingRecipeId === index}
+              >
+                {savingRecipeId === index ? (
+                  <ActivityIndicator size="small" color="#FF725E" />
+                ) : (
+                  <>
+                    <Ionicons
+                      name={tarif.saved ? "bookmark" : "bookmark-outline"}
+                      size={20}
+                      color={tarif.saved ? "#fff" : "#FF725E"}
+                    />
+                    <Text 
+                      style={[
+                        styles.saveButtonText,
+                        tarif.saved && styles.savedButtonText
+                      ]}
+                    >
+                      {tarif.saved ? "Kaydedildi" : "Kaydet"}
+                    </Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
           ))}
@@ -321,11 +437,19 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#FF725E",
+    backgroundColor: "#fff",
+  },
+  savedButton: {
+    backgroundColor: "#FF725E",
+    borderColor: "#FF725E",
   },
   saveButtonText: {
     color: "#FF725E",
     fontSize: 14,
     fontWeight: "600",
+  },
+  savedButtonText: {
+    color: "#fff",
   },
   emptyState: {
     alignItems: "center",
