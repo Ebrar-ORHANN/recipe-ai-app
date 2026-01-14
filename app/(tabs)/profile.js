@@ -8,10 +8,11 @@ import {
   ActivityIndicator,
   TextInput,
   Modal,
+  RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { auth, db } from "@/firebase/firebaseConfig";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { 
   collection, 
   query, 
@@ -23,10 +24,12 @@ import {
   setDoc,
   getDoc 
 } from "firebase/firestore";
+import { useFocusEffect } from "@react-navigation/native";
 
 export default function Profile() {
   const [savedRecipes, setSavedRecipes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("Hepsi");
   const [showEditModal, setShowEditModal] = useState(false);
   const [userName, setUserName] = useState("");
@@ -40,9 +43,23 @@ export default function Profile() {
   const user = auth.currentUser;
   const kategoriler = ["Hepsi", "Ana Yemek", "Çorba", "Tatlı", "Salata", "Ara Öğün"];
 
+  // Sayfa her açıldığında tarifleri yenile
+  useFocusEffect(
+    useCallback(() => {
+      loadUserData();
+      loadSavedRecipes();
+    }, [])
+  );
+
   useEffect(() => {
     loadUserData();
     loadSavedRecipes();
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadSavedRecipes();
+    setRefreshing(false);
   }, []);
 
   const loadUserData = async () => {
@@ -51,11 +68,6 @@ export default function Profile() {
       if (userDoc.exists()) {
         const userData = userDoc.data();
         setUserName(userData.displayName || user.email?.split('@')[0] || "Kullanıcı");
-        setStats({
-          saved: userData.savedCount || 0,
-          completed: userData.completedCount || 0,
-          favorites: userData.favoritesCount || 0
-        });
       } else {
         // İlk kez giriş yapıyorsa varsayılan veri oluştur
         const defaultName = user.email?.split('@')[0] || "Kullanıcı";
@@ -89,16 +101,35 @@ export default function Profile() {
         recipes.push({ id: doc.id, ...doc.data() });
       });
       
+      // Tarihe göre sırala (en yeni önce)
+      recipes.sort((a, b) => {
+        const aTime = a.createdAt?.toMillis() || 0;
+        const bTime = b.createdAt?.toMillis() || 0;
+        return bTime - aTime;
+      });
+      
       setSavedRecipes(recipes);
       
-      // İstatistikleri güncelle
+      // İstatistikleri hesapla
+      const completedCount = recipes.filter(r => r.isCompleted).length;
+      const favoritesCount = recipes.filter(r => r.isFavorite).length;
+      
+      setStats({
+        saved: recipes.length,
+        completed: completedCount,
+        favorites: favoritesCount
+      });
+      
+      // İstatistikleri Firestore'da güncelle
       await updateDoc(doc(db, "users", user.uid), {
-        savedCount: recipes.length
+        savedCount: recipes.length,
+        completedCount: completedCount,
+        favoritesCount: favoritesCount
       });
       
     } catch (error) {
       console.error("Tarifler yüklenirken hata:", error);
-      Alert.alert("Hata", "Tarifler yüklenemedi");
+      Alert.alert("Hata", "Tarifler yüklenemedi: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -116,11 +147,25 @@ export default function Profile() {
           onPress: async () => {
             try {
               await deleteDoc(doc(db, "savedRecipes", recipeId));
-              setSavedRecipes(savedRecipes.filter((r) => r.id !== recipeId));
+              
+              // Listeyi güncelle
+              const updatedRecipes = savedRecipes.filter((r) => r.id !== recipeId);
+              setSavedRecipes(updatedRecipes);
               
               // İstatistikleri güncelle
+              const completedCount = updatedRecipes.filter(r => r.isCompleted).length;
+              const favoritesCount = updatedRecipes.filter(r => r.isFavorite).length;
+              
+              setStats({
+                saved: updatedRecipes.length,
+                completed: completedCount,
+                favorites: favoritesCount
+              });
+              
               await updateDoc(doc(db, "users", user.uid), {
-                savedCount: savedRecipes.length - 1
+                savedCount: updatedRecipes.length,
+                completedCount: completedCount,
+                favoritesCount: favoritesCount
               });
               
               Alert.alert("Başarılı", "Tarif silindi");
@@ -143,16 +188,15 @@ export default function Profile() {
         isFavorite: newFavoriteStatus
       });
       
-      setSavedRecipes(
-        savedRecipes.map(r => 
-          r.id === recipeId ? { ...r, isFavorite: newFavoriteStatus } : r
-        )
+      const updatedRecipes = savedRecipes.map(r => 
+        r.id === recipeId ? { ...r, isFavorite: newFavoriteStatus } : r
       );
+      setSavedRecipes(updatedRecipes);
       
       // Favori sayısını güncelle
-      const favoriteCount = savedRecipes.filter(r => 
-        r.id === recipeId ? newFavoriteStatus : r.isFavorite
-      ).length;
+      const favoriteCount = updatedRecipes.filter(r => r.isFavorite).length;
+      
+      setStats(prev => ({ ...prev, favorites: favoriteCount }));
       
       await updateDoc(doc(db, "users", user.uid), {
         favoritesCount: favoriteCount
@@ -160,6 +204,7 @@ export default function Profile() {
       
     } catch (error) {
       console.error("Favori güncelleme hatası:", error);
+      Alert.alert("Hata", "Favori durumu güncellenemedi");
     }
   };
 
@@ -173,16 +218,15 @@ export default function Profile() {
         completedAt: newCompletedStatus ? new Date() : null
       });
       
-      setSavedRecipes(
-        savedRecipes.map(r => 
-          r.id === recipeId ? { ...r, isCompleted: newCompletedStatus } : r
-        )
+      const updatedRecipes = savedRecipes.map(r => 
+        r.id === recipeId ? { ...r, isCompleted: newCompletedStatus } : r
       );
+      setSavedRecipes(updatedRecipes);
       
       // Tamamlanan sayısını güncelle
-      const completedCount = savedRecipes.filter(r => 
-        r.id === recipeId ? newCompletedStatus : r.isCompleted
-      ).length;
+      const completedCount = updatedRecipes.filter(r => r.isCompleted).length;
+      
+      setStats(prev => ({ ...prev, completed: completedCount }));
       
       await updateDoc(doc(db, "users", user.uid), {
         completedCount: completedCount
@@ -195,6 +239,7 @@ export default function Profile() {
       
     } catch (error) {
       console.error("Tamamlama durumu güncelleme hatası:", error);
+      Alert.alert("Hata", "Durum güncellenemedi");
     }
   };
 
@@ -222,7 +267,7 @@ export default function Profile() {
     ? savedRecipes
     : savedRecipes.filter((recipe) => recipe.kategori === selectedCategory);
 
-  if (loading) {
+  if (loading && !refreshing) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#FF725E" />
@@ -232,7 +277,12 @@ export default function Profile() {
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView 
+      style={styles.container}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+    >
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.avatarContainer}>
@@ -370,7 +420,7 @@ export default function Profile() {
             <Text style={styles.emptyText}>
               {selectedCategory === "Hepsi" 
                 ? "Henüz kayıtlı tarif yok" 
-                : "Bu kategoride kayıtlı tarif yok"}
+                : `Bu kategoride kayıtlı tarif yok`}
             </Text>
             <Text style={styles.emptySubtext}>
               Ana sayfadan tariflerinizi kaydedin

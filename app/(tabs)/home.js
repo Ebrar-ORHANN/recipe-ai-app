@@ -8,20 +8,60 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { signOut } from "firebase/auth";
 import { auth, db } from "@/firebase/firebaseConfig";
 import { useRouter } from "expo-router";
 import { generateRecipe } from "@/ai/gemini";
-import { collection, addDoc, query, where, getDocs, deleteDoc, doc } from "firebase/firestore";
+import { 
+  collection, 
+  addDoc, 
+  query as firestoreQuery, 
+  where, 
+  getDocs, 
+  deleteDoc, 
+  doc 
+} from "firebase/firestore";
 
 export default function Home() {
   const router = useRouter();
-  const [query, setQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(""); // DEĞİŞTİRİLDİ: query -> searchQuery
   const [tarifler, setTarifler] = useState([]);
   const [loading, setLoading] = useState(false);
   const [savingRecipeId, setSavingRecipeId] = useState(null);
+
+  // Sayfa yüklendiğinde kaydedilmiş tarifleri kontrol et
+  useEffect(() => {
+    if (tarifler.length > 0) {
+      checkSavedRecipes();
+    }
+  }, [tarifler]);
+
+  const checkSavedRecipes = async () => {
+    try {
+      const q = firestoreQuery(
+        collection(db, "savedRecipes"),
+        where("userId", "==", auth.currentUser.uid)
+      );
+      const querySnapshot = await getDocs(q);
+      const savedRecipeNames = [];
+      
+      querySnapshot.forEach((docSnap) => {
+        savedRecipeNames.push(docSnap.data().ad);
+      });
+
+      // Tarifleri güncelle - hangisi kayıtlı onu işaretle
+      const updatedTarifler = tarifler.map(tarif => ({
+        ...tarif,
+        saved: savedRecipeNames.includes(tarif.ad)
+      }));
+      
+      setTarifler(updatedTarifler);
+    } catch (error) {
+      console.error("Kaydedilmiş tarifler kontrol edilirken hata:", error);
+    }
+  };
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -29,20 +69,20 @@ export default function Home() {
   };
 
   const handleSearch = async () => {
-    if (!query.trim()) {
+    if (!searchQuery.trim()) {
       Alert.alert("Hata", "Lütfen malzeme veya yemek adı girin!");
       return;
     }
 
     setLoading(true);
     try {
-      const tarifListesi = await generateRecipe(query);
+      const tarifListesi = await generateRecipe(searchQuery);
 
       if (tarifListesi.length === 0) {
         Alert.alert("Uyarı", "Tarif bulunamadı. Lütfen tekrar deneyin.");
+      } else {
+        setTarifler(tarifListesi);
       }
-
-      setTarifler(tarifListesi);
     } catch (error) {
       console.error("AI Hatası:", error);
       Alert.alert(
@@ -58,6 +98,13 @@ export default function Home() {
     try {
       setSavingRecipeId(index);
 
+      // Kullanıcı kontrolü
+      if (!auth.currentUser) {
+        Alert.alert("Hata", "Lütfen giriş yapın");
+        setSavingRecipeId(null);
+        return;
+      }
+
       // Kategori belirleme
       let kategori = "Ana Yemek";
       const tarifAdi = tarif.ad.toLowerCase();
@@ -68,7 +115,7 @@ export default function Home() {
       else if (tarifAdi.includes("börek") || tarifAdi.includes("poğaça")) kategori = "Ara Öğün";
 
       // Aynı tarif daha önce kaydedilmiş mi kontrol et
-      const q = query(
+      const q = firestoreQuery(
         collection(db, "savedRecipes"),
         where("userId", "==", auth.currentUser.uid),
         where("ad", "==", tarif.ad)
@@ -104,7 +151,7 @@ export default function Home() {
 
     } catch (error) {
       console.error("Kaydetme hatası:", error);
-      Alert.alert("Hata", "Tarif kaydedilemedi");
+      Alert.alert("Hata", "Tarif kaydedilemedi: " + error.message);
     } finally {
       setSavingRecipeId(null);
     }
@@ -115,7 +162,7 @@ export default function Home() {
       setSavingRecipeId(index);
 
       // Kaydedilmiş tarifi bul
-      const q = query(
+      const q = firestoreQuery(
         collection(db, "savedRecipes"),
         where("userId", "==", auth.currentUser.uid),
         where("ad", "==", tarif.ad)
@@ -146,7 +193,7 @@ export default function Home() {
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Hoşgeldin 👋</Text>
-          <Text style={styles.subtitle}>{auth.currentUser?.email}</Text>
+          
         </View>
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={24} color="#fff" />
@@ -161,8 +208,8 @@ export default function Home() {
           <TextInput
             style={styles.searchInput}
             placeholder="Örn: Elimde tavuk ve patates var"
-            value={query}
-            onChangeText={setQuery}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
             multiline
           />
         </View>
